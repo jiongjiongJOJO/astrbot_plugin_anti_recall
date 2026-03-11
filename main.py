@@ -194,7 +194,7 @@ class AntiRecall(Star):
             规范化后的会话字符串，格式为 platform:MessageType:session_id
             如果格式已经正确，返回原字符串
             如果格式不正确但可以推断，返回规范化后的字符串
-            如果无法处理，返回None
+            如果无法处理或输入为空，返回 None
         """
         if not session_str:
             return None
@@ -282,11 +282,8 @@ class AntiRecall(Star):
                     logger.error(f'[防撤回插件] 跳过无效的会话字符串: {forward_to_umo}')
                     continue
                 
+                # 验证函数保证返回的格式一定是 platform:MessageType:session_id
                 parts = normalized_session.split(':')
-                if len(parts) != 3:
-                    logger.error(f'[防撤回插件] 会话字符串格式错误: {normalized_session}')
-                    continue
-                
                 target_type = parts[1]
                 target_id = int(parts[2])
 
