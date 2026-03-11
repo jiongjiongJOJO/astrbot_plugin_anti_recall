@@ -17,7 +17,7 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
 
 @register("astrbot_plugin_anti_recall", "JOJO",
-          "[仅限aiocqhttp] 防撤回插件，开启监控指定会话后，该会话内撤回的消息将转发给指定接收者", "0.0.5")
+          "[仅限aiocqhttp] 防撤回插件，开启监控指定会话后，该会话内撤回的消息将转发给指定接收者", "0.0.6")
 class AntiRecall(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -181,6 +181,62 @@ class AntiRecall(Star):
                 }
             })
         return raw_nodes
+    
+    def _validate_and_normalize_session_string(self, session_str: str, default_platform: str = "aiocqhttp") -> str:
+        """
+        验证并规范化会话字符串为正确格式: platform:MessageType:session_id
+        
+        Args:
+            session_str: 输入的会话字符串
+            default_platform: 默认平台 (默认: aiocqhttp)
+            
+        Returns:
+            规范化后的会话字符串，格式为 platform:MessageType:session_id
+            如果格式已经正确，返回原字符串
+            如果格式不正确但可以推断，返回规范化后的字符串
+            如果无法处理或输入为空，返回 None
+        """
+        if not session_str:
+            return None
+            
+        parts = session_str.split(':')
+        
+        # 已经是正确格式: platform:MessageType:session_id
+        if len(parts) == 3:
+            platform, msg_type, session_id = parts
+            # 验证 MessageType 是否有效
+            if msg_type in ['GroupMessage', 'FriendMessage', 'OtherMessage']:
+                return session_str
+            else:
+                logger.warning(f"[防撤回插件] 无效的消息类型: {msg_type}，会话字符串: {session_str}")
+                return None
+        
+        # 只有两部分: MessageType:session_id，添加默认平台
+        elif len(parts) == 2:
+            msg_type, session_id = parts
+            if msg_type in ['GroupMessage', 'FriendMessage', 'OtherMessage']:
+                normalized = f"{default_platform}:{msg_type}:{session_id}"
+                logger.info(f"[防撤回插件] 自动规范化会话字符串: {session_str} -> {normalized}")
+                return normalized
+            else:
+                logger.warning(f"[防撤回插件] 无法识别的会话字符串格式: {session_str}")
+                return None
+        
+        # 只有一个部分: session_id，尝试推断为好友消息
+        elif len(parts) == 1:
+            session_id = parts[0]
+            # 假设纯数字ID默认为好友消息
+            if session_id.isdigit():
+                normalized = f"{default_platform}:FriendMessage:{session_id}"
+                logger.info(f"[防撤回插件] 自动规范化会话字符串 (假设为好友消息): {session_str} -> {normalized}")
+                return normalized
+            else:
+                logger.warning(f"[防撤回插件] 无法识别的会话字符串格式: {session_str}")
+                return None
+        
+        else:
+            logger.warning(f"[防撤回插件] 无效的会话字符串格式: {session_str}")
+            return None
 
     async def _send_recall_notification(self, user_id: str, group_id: str, recalled_content: list, forward_to_list: list, bot_id: str):
         is_forward_content = recalled_content is not None and all(isinstance(comp, Comp.Node) for comp in recalled_content)
@@ -189,7 +245,14 @@ class AntiRecall(Star):
             final_message_chain = [Comp.Plain(f'用户: {user_id} 在群组 {group_id} 撤回了消息:\n\n')] + (recalled_content or [])
             for forward_to in forward_to_list:
                 try:
-                    await self.context.send_message(forward_to, MessageChain(chain=final_message_chain))
+                    # 验证并规范化会话字符串
+                    normalized_session = self._validate_and_normalize_session_string(forward_to)
+                    if not normalized_session:
+                        logger.error(f'[防撤回插件] 跳过无效的会话字符串: {forward_to}')
+                        continue
+                    
+                    await self.context.send_message(normalized_session, MessageChain(chain=final_message_chain))
+                    logger.info(f'[防撤回插件] 成功转发普通消息到: {normalized_session}')
                 except Exception as e:
                     logger.error(f'[防撤回插件] 转发普通消息失败 to {forward_to}: {e}')
             return
@@ -213,9 +276,14 @@ class AntiRecall(Star):
         
         for forward_to_umo in forward_to_list:
             try:
-                parts = forward_to_umo.split(':')
-                if len(parts) != 3: continue
+                # 验证并规范化会话字符串
+                normalized_session = self._validate_and_normalize_session_string(forward_to_umo)
+                if not normalized_session:
+                    logger.error(f'[防撤回插件] 跳过无效的会话字符串: {forward_to_umo}')
+                    continue
                 
+                # 验证函数保证返回的格式一定是 platform:MessageType:session_id
+                parts = normalized_session.split(':')
                 target_type = parts[1]
                 target_id = int(parts[2])
 
