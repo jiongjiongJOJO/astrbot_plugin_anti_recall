@@ -1,5 +1,5 @@
 name: astrbot_plugin_anti_recall # 这是你的插件的唯一识别名。
 desc: "[仅限aiocqhttp] 防撤回插件，开启监控指定会话后，该会话内撤回的消息将转发给指定接收者" # 插件简短描述
-version: v0.0.5 # 插件版本号。格式：v1.1.1 或者 v1.1
+version: v0.0.6 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: JOJO,boyqiu玻璃球 # 作者
 repo: https://github.com/jiongjiongJOJO/astrbot_plugin_anti_recall # 插件的仓库地址
